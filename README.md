@@ -56,9 +56,12 @@ requester.py                    relay (wss://...)              agent.py
   relays.
 - Real Cashu payment gating (`cashu_gate.py`): decodes a token, redeems it via
   the `cashu` library (which implements the actual NUT-03 blinding math, not
-  a stubbed HTTP call), rejects missing/invalid/already-spent tokens.
-  Verified against a live public test mint, including a real double-spend
-  rejection from the mint itself.
+  a stubbed HTTP call), rejects missing/invalid/already-spent/underpaid
+  tokens. Only talks to mints on an explicit allow-list
+  (`CASHU_TRUSTED_MINTS`) -- a token naming any other mint is rejected before
+  any network call, closing an SSRF path found in review. Verified against a
+  live public test mint, including a real double-spend rejection from the
+  mint itself and rejection of an untrusted-mint token.
 - LLM audit worker (`auditor.py`) scoped to a fixed checklist: multisig
   threshold errors, preimage exposure, unhandled `OP_IF`/`OP_ELSE`,
   malleability, locktime misuse, oversized witness data. Wired into the
@@ -70,9 +73,9 @@ requester.py                    relay (wss://...)              agent.py
 - The actual audit *output* (real LLM responses on real vulnerable scripts)
   is wired but not yet demonstrated end-to-end in this README -- needs an
   `ANTHROPIC_API_KEY` in the environment to run, see docs/VERIFY.md.
-- No mint allow-list -- the agent trusts whatever mint a token names. Fine
-  for a demo against one known test mint; a real deployment would need a
-  configured trusted-mint list.
+- Mint allow-list defaults to just the public test mint used in development
+  (`https://testnut.cashu.space`). Adding a real production mint means
+  setting `CASHU_TRUSTED_MINTS` explicitly -- there's no auto-trust.
 - Requester is a CLI only, deliberately -- this project targets Machine
   Money, where use case is the test, not Freedom Stack, where UI/UX is
   decisive. See docs/DECISIONS.md if that scope call changes later.

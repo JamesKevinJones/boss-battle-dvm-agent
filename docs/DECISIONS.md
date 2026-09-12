@@ -219,6 +219,64 @@ use the wallet's post-swap balance delta.
 
 ---
 
+## 2026-09-12 — mint allow-list, amount enforcement, and generic error messages (security review findings)
+
+**Context.** Ran a security review (methodology from `.claude/commands/security-review.md`,
+applied manually since this is a first commit with no `origin` to diff
+against yet) against the whole initial codebase before pushing. It surfaced
+two real, high-confidence findings, both rooted in the same gap: nothing
+validated the Cashu token's `mint` field, which comes straight from an
+untrusted Nostr event any pubkey can publish.
+
+1. **SSRF + response echo.** `cashu_gate.redeem_token()` passed
+   `token_obj.mint` straight to `Wallet.with_db()`/`receive()`, which makes
+   real outbound HTTP requests to that URL before any proof validation. An
+   attacker could point `mint` at an internal address (cloud metadata
+   endpoint, localhost service) and the agent would call it. Worse, the raw
+   exception text (which can carry a response body from whatever host
+   answered) was returned as `RedemptionResult.error` and then republished
+   verbatim into a *public* Nostr feedback event by `agent.py` — a read
+   channel into internal network responses, visible to anyone watching the
+   relay.
+2. **Payment gate wasn't real authorization.** Nothing checked
+   `redemption.amount_sat` against the job's advertised `amount` tag, and
+   nothing restricted which mints were trusted. Anyone can run their own
+   Cashu mint and have it "validate" its own self-issued tokens for any face
+   value, so without a mint allow-list, "payment accepted" reduced to "a
+   server the attacker controls says its own token is fine" — free unlimited
+   LLM calls, defeating the entire Machine Money premise of this project.
+
+**Decision.**
+- `cashu_gate.py` now checks `token_obj.mint` against a `TRUSTED_MINTS`
+  allow-list (default: just `https://testnut.cashu.space`, override via
+  `CASHU_TRUSTED_MINTS`) *before* any network call — fixes both the SSRF and
+  the self-issued-mint bypass.
+- `cashu_gate.redeem_token()` no longer returns raw exception text; it
+  returns one of three fixed strings ("invalid token", "untrusted mint",
+  "redemption failed") so nothing from an arbitrary remote host can end up
+  in a public feedback event's content.
+- `agent.py` now compares `redemption.amount_sat * 1000` against the job's
+  `amount` tag (millisats) and rejects with `payment-required` if the token
+  paid less than advertised, so redemption succeeding is never sufficient on
+  its own to authorize running the paid audit.
+
+**Why not just document the mint-trust gap as a known limitation (as the
+first draft of the README did) and move on.** That was fine for "we know
+Cashu tokens name arbitrary mints" as a design note, but it understated the
+actual severity: this wasn't just an edge case, it was an open SSRF
+primitive plus a complete bypass of the project's one economic control,
+both reachable by anyone who can publish a Nostr event (no auth needed).
+Worth fixing before the repo goes public, not worth shipping as a caveat.
+
+**Consequences.** Any new mint added later (e.g. a real production mint)
+must be added to `CASHU_TRUSTED_MINTS` explicitly — there is deliberately no
+"trust on first use" fallback. Verified post-fix: a valid token from an
+untrusted mint is rejected before any redemption attempt; the same token
+against a trusted mint still works; a validly-redeemed but underpaid token
+is rejected with `payment-required` instead of proceeding to the audit.
+
+---
+
 ## YYYY-MM-DD — <the decision, stated as a fact>
 
 **Context.** What forced a choice.

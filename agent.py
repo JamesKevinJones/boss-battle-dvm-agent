@@ -93,6 +93,15 @@ async def handle_job(client, keys, request_event: Event) -> None:
         await send_feedback(client, keys, request_event, "error", f"payment rejected: {redemption.error}")
         return
 
+    # Redemption succeeding only proves the token was valid at a trusted mint --
+    # it says nothing about whether it covers the price this job advertised.
+    # Enforce that separately, or any token (even for 1 sat) pays for any job.
+    requested_millisats = int(tag_value(request_event, "amount") or "0")
+    if redemption.amount_sat * 1000 < requested_millisats:
+        print(f"[agent] underpaid: got {redemption.amount_sat} sat, wanted {requested_millisats} msat")
+        await send_feedback(client, keys, request_event, "payment-required", "amount paid is below the requested amount")
+        return
+
     print(f"[agent] payment accepted: {redemption.amount_sat} sat")
     await send_feedback(client, keys, request_event, "processing")
 

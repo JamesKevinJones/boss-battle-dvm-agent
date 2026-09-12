@@ -108,6 +108,14 @@ the audit result or an `audit failed` error line.
 - **The same valid token used twice**: the second use fails with a real
   mint-side "Token Already Spent" error -- this is the actual double-spend
   protection working, not a bug.
+- **A token from a mint not in `CASHU_TRUSTED_MINTS`**: agent replies
+  `status=error` with "untrusted mint", and never makes a network call to
+  that mint at all (verified by running the agent with
+  `CASHU_TRUSTED_MINTS=https://example.com/mint` and confirming a real
+  testnut token still gets rejected).
+- **A validly-redeemed token for less than the job's `--amount`**: agent
+  replies `status=payment-required` with "amount paid is below the
+  requested amount" instead of proceeding to the audit.
 
 ## Self-test (relay plumbing only, no payment/LLM)
 
@@ -120,9 +128,9 @@ Should print a generated identity, publish a note, and confirm
 
 ## Known-failing / known limitations
 
-- No mint allow-list: the agent trusts whatever mint a submitted token names.
-  Fine against the known public test mint used here; not a production-safe
-  default. See cashu_gate.py's docstring and docs/DECISIONS.md.
+- Mint allow-list (`CASHU_TRUSTED_MINTS`) defaults to just the public test
+  mint used here. Adding a real mint requires setting the env var explicitly
+  -- see cashu_gate.py's docstring and docs/DECISIONS.md.
 - Job kind `5600` is a deliberate, currently-unregistered NIP-90 extension
   (nothing in the official kind registry covers "audit a Bitcoin script") --
   see docs/DECISIONS.md for the full reasoning and the registry numbers
