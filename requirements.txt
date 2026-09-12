@@ -1,0 +1,4 @@
+nostr-sdk==0.45.1
+cashu==0.19.2
+marshmallow<4
+anthropic
